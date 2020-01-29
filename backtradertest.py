@@ -12,10 +12,12 @@ class TestStrategy(bt.Strategy):
                 ('maperiod', 15),
                 ('printlog', False),
         )
-        def log(self, txt, dt=None):
+
+        def log(self, txt, dt=None, doprint=False):
                 # Logging function for this strategy
-                dt = dt or self.datas[0].datetime.date(0)
-                print('%s, %s' % (dt.isoformat(), txt))
+                if self.params.printlog or doprint:
+                        dt = dt or self.datas[0].datetime.date(0)
+                        print('%s, %s' % (dt.isoformat(), txt))
 
         def __init__(self):
                 # Keep a reference to the 'close' line in the data[0] dataseries
@@ -30,16 +32,6 @@ class TestStrategy(bt.Strategy):
                 self.sma = bt.indicators.SimpleMovingAverage(
                         self.datas[0], period=self.params.maperiod)
 
-                # Indicators for the plotting show
-                bt.indicators.ExponentialMovingAverage(self.datas[0], period=25)
-                bt.indicators.WeightedMovingAverage(self.datas[0], period=25,
-                                                    subplot=True)
-                bt.indicators.StochasticSlow(self.datas[0])
-                bt.indicators.MACDHisto(self.datas[0])
-                rsi = bt.indicators.RSI(self.datas[0])
-                bt.indicators.SmoothedMovingAverage(rsi, period=10)
-                bt.indicators.ATR(self.datas[0], plot=False)
-
         def notify_order(self, order):
                 if order.status in [order.Submitted, order.Accepted]:
                         # Buy/Sell order submitted/accepted to/by broker - Nothing to do
@@ -49,8 +41,7 @@ class TestStrategy(bt.Strategy):
                 # Attention: broker could reject order if not enough cash
                 if order.status in [order.Completed]:
                         if order.isbuy():
-                                self.log(
-                                        'BUY EXECUTED, Price: %.2f, Cost: %.2f, Comm %.2f' %
+                                self.log('BUY EXECUTED, Price: %.2f, Cost: %.2f, Comm %.2f' %
                                         (order.executed.price,
                                          order.executed.value,
                                          order.executed.comm))
@@ -104,13 +95,20 @@ class TestStrategy(bt.Strategy):
 
                                 # Track created order to prevent duplicates
                                 self.order = self.sell()
+        def stop(self):
+                self.log('(MA Period %2d) Ending Value %.2f' %
+                         (self.params.maperiod, self.broker.getvalue()), doprint=True)
+
 
 if __name__ == '__main__':
         # Instantiate cerebro object
         cerebro = bt.Cerebro()
 
-        # Give cerebro strategy
-        cerebro.addstrategy(TestStrategy)
+        # Add a strategy
+        strats = cerebro.optstrategy(
+                TestStrategy,
+                maperiod=range(10, 31)
+        )
 
         # Datas are in a subfolder of the samples. Need to find where the script is
         # because it could have been called from anywhere
@@ -135,14 +133,5 @@ if __name__ == '__main__':
         # Set commission rate
         cerebro.broker.setcommission(commission=0.0)
 
-        # Print our starting conditions
-        print('Starting Portfolio value: %.2f' % cerebro.broker.getvalue())
-
         # Run through data feed
-        cerebro.run()
-
-        # Print final results
-        print('Final Portfolio value: %.2f' % cerebro.broker.getvalue())
-
-        # Plot results
-        cerebro.plot()
+        cerebro.run(maxcpus=1)
